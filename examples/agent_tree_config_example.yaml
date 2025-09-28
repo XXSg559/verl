@@ -1,0 +1,139 @@
+# Example configuration for Agent Tree Rollout
+# This demonstrates how to configure multi-agent tree search in verl
+
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# Data configuration
+data:
+  max_prompt_length: 1024
+  max_response_length: 1024
+  train_batch_size: 128
+  return_raw_chat: True
+  shuffle: False
+
+# Actor rollout configuration with agent tree search
+actor_rollout_ref:
+  rollout:
+    name: agent_tree                    # Use the new agent_tree rollout
+
+    # Tree search configuration
+    tree_config:
+      enable: true                      # Enable tree search
+      max_depth: 4                      # Maximum tree depth
+      max_branches_per_node: 3          # Branches per node
+      max_active_nodes: 8               # Max simultaneous active nodes
+      search_timeout: 180.0             # Search timeout in seconds
+      coordination_strategy: hierarchical # hierarchical | collaborative | competitive
+      fallback_to_single_agent: true    # Fallback if tree search fails
+
+    # Agent pool configuration
+    agent_tree_config:
+      agent_pool:
+        # Explorer agents - generate new solutions/branches
+        explorers:
+          - name: "mathematical_explorer"
+            type: "specialized"
+            role: "EXPLORER"
+            specialization: "mathematical"
+            model: "deepseek/deepseek-math-7b"
+            temperature: 0.3
+            max_tokens: 400
+            tools: ["calculator", "symbolic_math"]
+            weight: 1.5
+
+          - name: "creative_explorer"
+            type: "specialized"
+            role: "EXPLORER"
+            specialization: "creative"
+            model: "qwen/qwen-2.5-7b"
+            temperature: 0.9
+            max_tokens: 350
+            tools: ["brainstorming", "ideation"]
+            weight: 1.2
+
+          - name: "logical_explorer"
+            type: "specialized"
+            role: "EXPLORER"
+            specialization: "logical"
+            model: "claude/claude-3-5-sonnet"
+            temperature: 0.4
+            max_tokens: 300
+            tools: ["logic_checker", "reasoning_validator"]
+            weight: 1.0
+
+        # Evaluator agents - assess solution quality
+        evaluators:
+          - name: "quality_evaluator"
+            type: "specialized"
+            role: "EVALUATOR"
+            specialization: "quality_assessment"
+            model: "gpt-4o"
+            temperature: 0.2
+            max_tokens: 200
+            criteria: ["accuracy", "clarity", "completeness"]
+            weight: 1.0
+
+          - name: "accuracy_evaluator"
+            type: "specialized"
+            role: "EVALUATOR"
+            specialization: "accuracy_check"
+            model: "claude/claude-3-5-sonnet"
+            temperature: 0.1
+            max_tokens: 150
+            criteria: ["correctness", "factual_accuracy"]
+            weight: 1.0
+
+        # Coordinator agents - manage the search process
+        coordinators:
+          - name: "search_coordinator"
+            type: "specialized"
+            role: "COORDINATOR"
+            specialization: "coordination"
+            model: "gpt-4o"
+            temperature: 0.3
+            max_tokens: 250
+            weight: 1.0
+
+        # Synthesizer agents - combine results
+        synthesizers:
+          - name: "result_synthesizer"
+            type: "specialized"
+            role: "SYNTHESIZER"
+            specialization: "synthesis"
+            model: "claude/claude-3-5-sonnet"
+            temperature: 0.4
+            max_tokens: 300
+            weight: 1.0
+
+# Algorithm configuration (using GRPO as example)
+algorithm:
+  name: grpo
+  grpo:
+    kl_coeff: 0.05
+    cliprange: 0.2
+    temperature: 0.8
+
+# Model configuration
+actor_rollout_ref:
+  model:
+    path: "qwen/qwen-2.5-7b-instruct"
+    trust_remote_code: true
+
+critic:
+  model:
+    path: "qwen/qwen-2.5-7b-instruct"
+    trust_remote_code: true
+
+# Training configuration
+trainer:
+  default_hdfs_cache_dir: null
+  save_freq: 100
+  logging_freq: 1
+  eval_freq: 100
+  save_dir: "./checkpoints"

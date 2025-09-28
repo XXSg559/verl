@@ -1,0 +1,195 @@
+# Example configuration for Tree-based GRPO training
+# This demonstrates how to configure tree-structured rollouts with GRPO
+# for multi-agent hierarchical reinforcement learning
+
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# Data configuration
+data:
+  max_prompt_length: 1024
+  max_response_length: 1024
+  train_batch_size: 64
+  return_raw_chat: True
+  shuffle: False
+
+# Actor rollout configuration with tree GRPO
+actor_rollout_ref:
+  rollout:
+    name: agent_tree
+
+    # Tree search configuration (optional - can disable if only using GRPO tree)
+    tree_config:
+      enable: false  # Disable regular tree search when using GRPO tree
+      fallback_to_single_agent: true
+
+      # Context management configuration
+      context_config:
+        max_context_length: 1024          # Maximum context length per node
+        compression_ratio: 0.5            # Target compression ratio
+        depth_scaling_factor: 0.8         # Reduce context budget by 20% per depth
+        preserve_keywords:                # Keywords to preserve during compression
+          - "solution"
+          - "answer"
+          - "equation"
+          - "result"
+          - "conclusion"
+        agent_type_weights:               # Importance weights for different agent types
+          mathematical: 1.2
+          logical: 1.1
+          evaluator: 1.3
+          creative: 0.9
+          general: 1.0
+
+    # Tree GRPO configuration
+    tree_grpo_config:
+      # Tree structure configuration
+      tree_structure:
+        max_depth: 3
+        # Option 1: Uniform branching (classic 1→2→4→8 pattern)
+        uniform_branching: 2
+        # Option 2: Custom schedule (uncomment to use)
+        # branching_schedule: [2, 2, 2]  # depth 1, 2, 3
+        # Option 3: Asymmetric pattern (uncomment to use)
+        # branching_schedule: [3, 2, 4]  # 1→3→6→24
+
+      # Reward aggregation configuration
+      reward_aggregation:
+        method: "mean_minus_std"  # mean, mean_minus_std, weighted_stats, risk_adjusted
+        std_penalty: 0.1  # Penalty for high variance (risk-averse)
+        # For weighted_stats method:
+        # weights:
+        #   mean: 1.0
+        #   std: -0.2
+        #   min: -0.05
+        #   max: 0.1
+
+      # Grouping strategy for GRPO advantage computation
+      grouping:
+        method: "by_parent_and_depth"  # by_parent_and_depth, by_depth_only, by_reward_range
+        min_group_size: 2
+        max_group_size: 8
+
+      # GRPO specific parameters
+      epsilon: 1e-6
+      norm_adv_by_std: true
+      separate_depth_training: true  # Train each depth level separately
+      propagate_gradients: false     # Don't propagate gradients up the tree
+
+    # Agent pool configuration (if using multi-agent tree generation)
+    agent_tree_config:
+      agent_pool:
+        # Explorer agents for generating diverse responses
+        explorers:
+          - name: "mathematical_explorer"
+            type: "specialized"
+            role: "EXPLORER"
+            specialization: "mathematical"
+            model: "qwen/qwen-2.5-7b-instruct"
+            temperature: 0.3
+            max_tokens: 300
+            weight: 1.5
+
+          - name: "creative_explorer"
+            type: "specialized"
+            role: "EXPLORER"
+            specialization: "creative"
+            model: "qwen/qwen-2.5-7b-instruct"
+            temperature: 0.8
+            max_tokens: 300
+            weight: 1.2
+
+          - name: "logical_explorer"
+            type: "specialized"
+            role: "EXPLORER"
+            specialization: "logical"
+            model: "qwen/qwen-2.5-7b-instruct"
+            temperature: 0.4
+            max_tokens: 300
+            weight: 1.0
+
+# Algorithm configuration - use GRPO with tree advantage estimator
+algorithm:
+  name: grpo
+  grpo:
+    kl_coeff: 0.05
+    temperature: 0.8
+    # Use the tree-based advantage estimator
+    advantage_estimator: grpo_tree
+
+# Model configuration
+actor_rollout_ref:
+  model:
+    path: "qwen/qwen-2.5-7b-instruct"
+    trust_remote_code: true
+
+critic:
+  model:
+    path: "qwen/qwen-2.5-7b-instruct"
+    trust_remote_code: true
+
+# Training configuration
+trainer:
+  default_hdfs_cache_dir: null
+  save_freq: 100
+  logging_freq: 1
+  eval_freq: 100
+  save_dir: "./tree_grpo_checkpoints"
+
+---
+# Alternative configurations for different tree patterns
+
+# Configuration 1: Ternary tree (1→3→9→27)
+tree_grpo_ternary:
+  tree_structure:
+    max_depth: 3
+    uniform_branching: 3
+  reward_aggregation:
+    method: "weighted_stats"
+    weights:
+      mean: 1.0
+      std: -0.15
+      max: 0.1
+  grouping:
+    method: "by_parent_and_depth"
+
+# Configuration 2: Asymmetric tree with custom branching
+tree_grpo_asymmetric:
+  tree_structure:
+    max_depth: 4
+    branching_schedule: [3, 2, 4, 1]  # 1→3→6→24→24
+  reward_aggregation:
+    method: "risk_adjusted"
+    risk_free_rate: 0.0
+  grouping:
+    method: "by_depth_only"
+
+# Configuration 3: Conservative (risk-averse) setup
+tree_grpo_conservative:
+  tree_structure:
+    max_depth: 2
+    uniform_branching: 2
+  reward_aggregation:
+    method: "mean_minus_std"
+    std_penalty: 0.3  # High penalty for variance
+  grouping:
+    method: "by_parent_and_depth"
+  separate_depth_training: true
+  norm_adv_by_std: true
+
+# Configuration 4: Exploration-focused setup
+tree_grpo_exploratory:
+  tree_structure:
+    max_depth: 3
+    uniform_branching: 4  # More branches for exploration
+  reward_aggregation:
+    method: "mean_plus_std"
+    std_bonus: 0.2  # Reward diversity
+  grouping:
+    method: "by_reward_range"
+    reward_range_bins: 5

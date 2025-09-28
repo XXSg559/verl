@@ -105,6 +105,7 @@ class AdvantageEstimator(str, Enum):
     GPG = "gpg"
     RLOO_VECTORIZED = "rloo_vectorized"
     GRPO_VECTORIZED = "grpo_vectorized"
+    GRPO_TREE = "grpo_tree"
 
 
 ADV_ESTIMATOR_REGISTRY: dict[str, Any] = {}
@@ -751,6 +752,83 @@ def compute_rloo_vectorized_outcome_advantage(
         adv = adv.unsqueeze(-1) * response_mask
 
     return adv, adv
+
+
+@register_adv_est(AdvantageEstimator.GRPO_TREE)
+def compute_grpo_tree_advantage(
+    tree_nodes: dict,
+    tree_config: dict,
+    final_rewards: dict = None,
+    **kwargs,
+) -> dict:
+    """
+    Compute tree-based GRPO advantages using hierarchical reward propagation.
+
+    This advantage estimator works with tree-structured rollouts where each node's
+    reward is computed from statistics of subsequent leaf rewards, enabling
+    critic-free hierarchical training.
+
+    Args:
+        tree_nodes: Dictionary mapping node IDs to TreeGRPONode instances
+        tree_config: Tree GRPO configuration dictionary
+        final_rewards: Dictionary mapping leaf node IDs to their final rewards
+        **kwargs: Additional arguments
+
+    Returns:
+        Dictionary mapping node IDs to (advantages, returns) tensors
+
+    Note:
+        This estimator requires special data preparation and is typically used
+        with the AgentTreeLoop for multi-agent tree rollouts.
+    """
+    try:
+        # Import here to avoid circular dependencies
+        from verl.experimental.agent_tree.grpo_tree import (
+            compute_grpo_tree_advantage as _compute_tree_advantage,
+            TreeGRPOConfig
+        )
+        from verl.experimental.agent_tree.tree_structures import (
+            TreeGRPONode,
+            TreeStructureConfig,
+            RewardAggregationConfig,
+            GroupingConfig
+        )
+
+        # Convert config dict to proper config objects if needed
+        if isinstance(tree_config, dict):
+            # Create config from dictionary
+            tree_structure_config = TreeStructureConfig(**tree_config.get("tree_structure", {}))
+            reward_agg_config = RewardAggregationConfig(**tree_config.get("reward_aggregation", {}))
+            grouping_config = GroupingConfig(**tree_config.get("grouping", {}))
+
+            config = TreeGRPOConfig(
+                tree_structure=tree_structure_config,
+                reward_aggregation=reward_agg_config,
+                grouping=grouping_config,
+                epsilon=tree_config.get("epsilon", 1e-6),
+                norm_adv_by_std=tree_config.get("norm_adv_by_std", True),
+                separate_depth_training=tree_config.get("separate_depth_training", True),
+                propagate_gradients=tree_config.get("propagate_gradients", False)
+            )
+        else:
+            config = tree_config
+
+        # Ensure all nodes are TreeGRPONode instances
+        if tree_nodes and not isinstance(next(iter(tree_nodes.values())), TreeGRPONode):
+            raise ValueError("tree_nodes must contain TreeGRPONode instances")
+
+        # Compute tree-based advantages
+        advantages = _compute_tree_advantage(tree_nodes, config, final_rewards)
+
+        return advantages
+
+    except ImportError as e:
+        raise ImportError(
+            f"Tree GRPO requires experimental agent tree module: {e}. "
+            "Make sure verl.experimental.agent_tree is available."
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed to compute tree GRPO advantages: {e}")
 
 
 def compute_rewards(token_level_scores, old_log_prob, ref_log_prob, kl_ratio):
