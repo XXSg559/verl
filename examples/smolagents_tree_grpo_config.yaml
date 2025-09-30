@@ -1,0 +1,187 @@
+# Smolagents + Tree GRPO Configuration Example
+# This configuration shows how to integrate smolagents with tree GRPO training
+
+# Model configuration
+model:
+  model_id: "openai/gpt-4"
+  temperature: 0.7
+  max_tokens: 2048
+
+# Tree search configuration
+tree_search:
+  max_depth: 4
+  max_branches_per_node: 6  # 3 agents * 2 proposals = 6 combinations max
+  max_active_nodes: 20
+  search_timeout: 300.0
+  coordination_strategy: "hierarchical"
+  enable_fallback: true
+
+# Smolagents integration configuration
+smolagents_config:
+  # Coordination settings
+  coordination_strategy: "hierarchical"  # "hierarchical", "competitive", "collaborative"
+  max_coordination_attempts: 3
+  coordination_timeout: 30.0
+
+  # Proposal generation settings
+  proposals_per_agent: 2
+  enable_memory_isolation: true
+  generation_diversity_temperature: 0.8
+
+  # Output fusion settings
+  fusion_strategy: "structured_combination"  # "simple_concat", "structured_combination", "llm_fusion"
+
+  # Operation modes
+  enable_silent_mode: true
+  verbose_coordination: false
+
+# Managed agents configuration
+managed_agents:
+  research_agent:
+    type: "ToolCallingAgent"
+    description: "Specializes in web research and information gathering"
+    tools:
+      - "WebSearchTool"
+    max_steps: 5
+    temperature: 0.6
+
+  coding_agent:
+    type: "ToolCallingAgent"
+    description: "Specializes in code generation, analysis, and execution"
+    tools:
+      - "PythonInterpreterTool"
+    max_steps: 5
+    temperature: 0.7
+
+  reasoning_agent:
+    type: "ToolCallingAgent"
+    description: "Specializes in logical analysis and strategic thinking"
+    tools: []
+    max_steps: 3
+    temperature: 0.5
+
+# Tree GRPO training configuration
+tree_grpo_config:
+  # Tree structure
+  tree_structure:
+    max_depth: 4
+    branching_pattern: "flexible"  # Can be [2, 3, 6] for different levels
+    enable_early_stopping: true
+    quality_threshold: 0.8
+
+  # Reward aggregation
+  reward_aggregation:
+    method: "weighted_mean"  # "mean", "weighted_mean", "max", "percentile"
+    depth_weighting: "exponential"  # "uniform", "linear", "exponential"
+    confidence_weighting: true
+    outlier_removal: true
+    outlier_threshold: 2.0
+
+  # Agent contribution weighting
+  agent_contribution_weighting:
+    enable: true
+    method: "equal_share"  # "equal_share", "performance_based", "contribution_quality"
+    performance_window: 10  # Number of recent expansions to consider
+
+  # Grouping strategy
+  grouping:
+    strategy: "by_combination"  # "by_depth", "by_agent", "by_combination", "by_quality"
+    group_size: 4
+    enable_cross_group_learning: true
+
+  # GRPO parameters
+  epsilon: 1.0e-6
+  norm_adv_by_std: true
+  separate_depth_training: true
+  propagate_gradients: false
+
+# Context management
+context_management:
+  # Compression settings
+  compression:
+    enable: true
+    max_context_length: 4096
+    compression_ratio: 0.3
+    strategy: "extractive_summarization"  # "extractive_summarization", "abstractive_summarization"
+
+  # Information fusion
+  information_fusion:
+    enable: true
+    fusion_window: 3  # Number of previous agent outputs to consider
+    relevance_threshold: 0.6
+    diversity_bonus: 0.1
+
+  # Hierarchical context
+  hierarchical_context:
+    enable: true
+    levels: 3
+    level_compression_ratios: [0.8, 0.5, 0.3]
+
+# Training parameters
+training:
+  # Batch configuration
+  batch_size: 8
+  sequence_length: 1024
+
+  # Learning rates
+  learning_rate: 1.0e-5
+  coordinator_learning_rate: 5.0e-6  # Lower LR for coordination policy
+
+  # Training schedule
+  warmup_steps: 100
+  total_steps: 10000
+  eval_interval: 500
+
+  # Regularization
+  weight_decay: 0.01
+  gradient_clipping: 1.0
+
+# Evaluation and metrics
+evaluation:
+  # Quality metrics
+  quality_metrics:
+    - "task_completion"
+    - "output_coherence"
+    - "agent_collaboration"
+    - "diversity_score"
+    - "efficiency"
+
+  # Performance tracking
+  performance_tracking:
+    track_agent_contributions: true
+    track_coordination_quality: true
+    track_fusion_effectiveness: true
+
+  # Validation settings
+  validation:
+    validation_split: 0.1
+    validation_interval: 100
+    early_stopping_patience: 10
+
+# Logging and monitoring
+logging:
+  level: "INFO"
+  log_agent_interactions: true
+  log_coordination_decisions: true
+  log_reward_decomposition: true
+  save_tree_visualizations: true
+
+  # Output directories
+  log_dir: "./logs/smolagents_tree_grpo"
+  checkpoint_dir: "./checkpoints/smolagents_tree_grpo"
+  visualization_dir: "./visualizations/smolagents_tree_grpo"
+
+# Resource management
+resources:
+  # Parallel processing
+  max_parallel_agents: 3
+  max_concurrent_expansions: 2
+
+  # Memory management
+  max_memory_per_agent: "2GB"
+  memory_cleanup_interval: 100
+
+  # Timeout settings
+  agent_timeout: 60.0
+  expansion_timeout: 120.0
+  total_timeout: 3600.0

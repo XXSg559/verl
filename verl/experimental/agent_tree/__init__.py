@@ -45,6 +45,19 @@ from .context_management import (
     AgentInformationFusion, DynamicContextSelector, HierarchicalContextManager
 )
 
+# Smolagents integration (optional import)
+try:
+    from .smolagents_integration import (
+        SmolagentsTreeCoordinator, MultiProposalGenerator, ComboNodeBuilder,
+        AgentOutput, CombinedOutput
+    )
+    from .smolagents_tree_orchestrator import (
+        SmolagentsTreeOrchestrator, SmolagentsTreeConfig
+    )
+    SMOLAGENTS_INTEGRATION_AVAILABLE = True
+except ImportError:
+    SMOLAGENTS_INTEGRATION_AVAILABLE = False
+
 __all__ = [
     # Base classes
     "BaseTreeAgent",
@@ -93,3 +106,17 @@ __all__ = [
     "DynamicContextSelector",
     "HierarchicalContextManager",
 ]
+
+# Add smolagents integration to __all__ if available
+if SMOLAGENTS_INTEGRATION_AVAILABLE:
+    __all__.extend([
+        # Smolagents integration
+        "SmolagentsTreeCoordinator",
+        "MultiProposalGenerator",
+        "ComboNodeBuilder",
+        "AgentOutput",
+        "CombinedOutput",
+        "SmolagentsTreeOrchestrator",
+        "SmolagentsTreeConfig",
+        "SMOLAGENTS_INTEGRATION_AVAILABLE",
+    ])

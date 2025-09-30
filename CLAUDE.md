@@ -117,3 +117,43 @@ python -m http.server -d _build/html/
 ### NPU Support
 - ASCEND NPU support available with transformers>=4.52.4
 - Includes special patches for tensordict synchronization
+
+## Sub-repositories
+
+### smolagents
+- **Location**: `./smolagents/` (git submodule)
+- **Description**: A lightweight library for building powerful code agents that "think in code"
+- **Key Features**:
+  - **Code Agents**: Agents write actions as Python code snippets instead of JSON/text
+  - **First-class Security**: Sandboxed execution via E2B, Modal, Docker, or Pyodide+Deno WebAssembly
+  - **Model-Agnostic**: Supports any LLM (local transformers, OpenAI, Anthropic, Azure, Bedrock, etc.)
+  - **Multimodal Support**: Text, vision, video, and audio inputs
+  - **Hub Integration**: Share and pull tools/agents from HuggingFace Hub
+  - **Tool Ecosystem**: Integration with MCP servers, LangChain tools, and Hub Spaces
+
+#### smolagents Quick Start
+```bash
+# Install with toolkit
+pip install "smolagents[toolkit]"
+
+# Basic usage
+from smolagents import CodeAgent, WebSearchTool, InferenceClientModel
+model = InferenceClientModel()
+agent = CodeAgent(tools=[WebSearchTool()], model=model)
+agent.run("Your task here")
+```
+
+#### CLI Usage
+```bash
+# General agent
+smolagent "Plan a trip to Tokyo" --model-type "InferenceClientModel" --tools "web_search"
+
+# Web browser agent
+webagent "Navigate to a website and extract information" --model-type "LiteLLMModel" --model-id "gpt-4o"
+```
+
+#### Development Notes
+- Main logic fits in ~1,000 lines of code (`agents.py`)
+- Supports both `CodeAgent` (writes Python code) and `ToolCallingAgent` (JSON/text actions)
+- Code agents demonstrate 30% fewer steps and higher performance on benchmarks
+- Open-source models (e.g., DeepSeek-R1) can match closed-source model performance
