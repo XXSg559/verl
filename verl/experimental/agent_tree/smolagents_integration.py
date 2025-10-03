@@ -55,6 +55,7 @@ class AgentOutput:
     output_text: str
     tokens: Optional[List[int]] = None
     logprobs: Optional[List[float]] = None
+    response_mask: Optional[List[int]] = None  # Added: mask from verl's AgentLoopOutput
     metadata: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -69,6 +70,7 @@ class CombinedOutput:
     agent_contributions: Dict[str, AgentOutput]
     tokens: Optional[List[int]] = None
     logprobs: Optional[List[float]] = None
+    response_mask: Optional[List[int]] = None  # Added: combined mask for training
     fusion_strategy: str = "simple_concat"
 
 
@@ -312,14 +314,15 @@ class MultiProposalGenerator:
             # Generate proposal
             result = self.agent(varied_task)
 
-            # Extract tokens and logprobs if available
-            tokens, logprobs = self._extract_generation_data()
+            # Extract tokens, logprobs, and mask if available
+            tokens, logprobs, response_mask = self._extract_generation_data()
 
             return AgentOutput(
                 agent_name=self.agent.name or "unknown_agent",
                 output_text=str(result),
                 tokens=tokens,
                 logprobs=logprobs,
+                response_mask=response_mask,  # Added: include mask
                 metadata={
                     "variant_id": variant_id,
                     "task": varied_task,
@@ -332,6 +335,7 @@ class MultiProposalGenerator:
             return AgentOutput(
                 agent_name=self.agent.name or "unknown_agent",
                 output_text=f"Error: {str(e)}",
+                response_mask=[],  # Empty mask for error case
                 metadata={"error": True, "variant_id": variant_id}
             )
 
@@ -353,20 +357,25 @@ class MultiProposalGenerator:
 
         return proposals
 
-    def _extract_generation_data(self) -> Tuple[Optional[List[int]], Optional[List[float]]]:
-        """Extract tokens and logprobs from recent generation if available."""
+    def _extract_generation_data(self) -> Tuple[Optional[List[int]], Optional[List[float]], Optional[List[int]]]:
+        """Extract tokens, logprobs, and mask from recent generation if available."""
         try:
             # Check if the agent's memory has recent steps with generation data
             if self.agent.memory.steps:
                 recent_step = self.agent.memory.steps[-1]
                 if hasattr(recent_step, 'model_output_message') and recent_step.model_output_message:
-                    # Try to extract tokens/logprobs from model output
+                    # Try to extract tokens/logprobs/mask from model output
                     # This is agent-specific and may need customization
+
+                    # For now, we'll need to get this from the agent's output
+                    # when integrated with verl's AgentLoopOutput
                     pass
 
-            return None, None
+            # Note: In actual integration, this will be populated from
+            # AgentLoopOutput.response_ids, response_logprobs, response_mask
+            return None, None, None
         except Exception:
-            return None, None
+            return None, None, None
 
 
 class ComboNodeBuilder:
@@ -514,6 +523,7 @@ class ComboNodeBuilder:
             # Node generation data (will be populated if tokens/logprobs available)
             node_generation_tokens=combined_output.tokens or [],
             node_generation_logprobs=combined_output.logprobs or [],
+            node_generation_mask=combined_output.response_mask or [],
 
             # Combination metadata
             fusion_strategy=combined_output.fusion_strategy,

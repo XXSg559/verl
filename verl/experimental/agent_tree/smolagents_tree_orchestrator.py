@@ -33,6 +33,7 @@ from .smolagents_integration import (
     AgentOutput,
     SMOLAGENTS_AVAILABLE
 )
+from .reward_calculators import BaseRewardCalculator, TreeGRPORewardCalculator
 
 if SMOLAGENTS_AVAILABLE:
     from smolagents import CodeAgent, ToolCallingAgent
@@ -61,6 +62,10 @@ class SmolagentsTreeConfig:
     # Coordination parameters
     max_coordination_attempts: int = 3
     coordination_timeout: float = 30.0
+
+    # Reward calculation settings
+    enable_execution_rewards: bool = False
+    reward_calculator: Optional[BaseRewardCalculator] = None
 
 
 class SmolagentsTreeOrchestrator:
@@ -100,6 +105,11 @@ class SmolagentsTreeOrchestrator:
         if hasattr(coordinator_agent, 'managed_agents'):
             for agent_name, agent in coordinator_agent.managed_agents.items():
                 self.proposal_generators[agent_name] = MultiProposalGenerator(agent)
+
+        # Initialize reward calculator if provided
+        self.reward_calculator = None
+        if self.config.enable_execution_rewards and self.config.reward_calculator:
+            self.reward_calculator = TreeGRPORewardCalculator(self.config.reward_calculator)
 
         # Metrics tracking
         self.expansion_history = []
@@ -445,6 +455,152 @@ class SmolagentsTreeOrchestrator:
 
         summary["agent_usage"] = agent_usage
         return summary
+
+    def calculate_execution_rewards(
+        self,
+        tree_nodes: List[TreeGRPONode],
+        expected_results: Dict[str, Any],
+        **kwargs
+    ) -> Dict[str, float]:
+        """
+        Calculate execution-based rewards for tree nodes using code execution.
+
+        Args:
+            tree_nodes: List of TreeGRPONode instances to evaluate
+            expected_results: Dict mapping node_id to expected execution result
+            **kwargs: Additional parameters for reward calculation
+
+        Returns:
+            Dict mapping node_id to reward value
+
+        Note:
+            This method requires enable_execution_rewards=True and a reward_calculator
+            to be configured in the orchestrator.
+        """
+        if not self.reward_calculator:
+            logger.warning("No reward calculator configured. Cannot calculate execution rewards.")
+            return {}
+
+        if not self.config.enable_execution_rewards:
+            logger.warning("Execution rewards disabled in configuration.")
+            return {}
+
+        logger.info(f"Calculating execution rewards for {len(tree_nodes)} nodes")
+
+        try:
+            node_rewards = self.reward_calculator.calculate_node_rewards(
+                tree_nodes=tree_nodes,
+                expected_results=expected_results,
+                **kwargs
+            )
+
+            # Log reward summary
+            if node_rewards:
+                summary = self.reward_calculator.get_performance_summary(node_rewards)
+                logger.info(f"Reward calculation summary: {summary}")
+
+            return node_rewards
+
+        except Exception as e:
+            logger.error(f"Error calculating execution rewards: {e}")
+            return {}
+
+    def evaluate_tree_with_execution_rewards(
+        self,
+        tree_nodes: List[TreeGRPONode],
+        qa_pairs: Dict[str, Dict[str, Any]],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Evaluate an entire tree using execution-based rewards for code generation tasks.
+
+        Args:
+            tree_nodes: All nodes in the tree to evaluate
+            qa_pairs: Dict mapping node_id to {"question": str, "expected_answer": Any}
+            **kwargs: Additional parameters
+
+        Returns:
+            Dict with evaluation results including node rewards and summary statistics
+        """
+        if not self.reward_calculator:
+            logger.error("No reward calculator configured for evaluation")
+            return {"error": "No reward calculator available"}
+
+        logger.info(f"Evaluating tree with {len(tree_nodes)} nodes using execution rewards")
+
+        # Extract expected results from QA pairs
+        expected_results = {}
+        for node_id, qa_pair in qa_pairs.items():
+            expected_results[node_id] = qa_pair.get("expected_answer")
+
+        # Calculate rewards
+        node_rewards = self.calculate_execution_rewards(
+            tree_nodes=tree_nodes,
+            expected_results=expected_results,
+            **kwargs
+        )
+
+        # Get performance statistics
+        performance_summary = self.reward_calculator.get_performance_summary(node_rewards)
+
+        # Analyze tree structure performance
+        tree_analysis = self._analyze_tree_performance(tree_nodes, node_rewards)
+
+        return {
+            "node_rewards": node_rewards,
+            "performance_summary": performance_summary,
+            "tree_analysis": tree_analysis,
+            "total_nodes_evaluated": len(tree_nodes),
+            "successful_evaluations": len(node_rewards)
+        }
+
+    def _analyze_tree_performance(
+        self,
+        tree_nodes: List[TreeGRPONode],
+        node_rewards: Dict[str, float]
+    ) -> Dict[str, Any]:
+        """Analyze tree performance by depth and agent contributions."""
+        depth_analysis = {}
+        agent_analysis = {}
+
+        for node in tree_nodes:
+            if node.node_id not in node_rewards:
+                continue
+
+            reward = node_rewards[node.node_id]
+            depth = node.depth
+
+            # Analyze by depth
+            if depth not in depth_analysis:
+                depth_analysis[depth] = {"rewards": [], "nodes": 0}
+            depth_analysis[depth]["rewards"].append(reward)
+            depth_analysis[depth]["nodes"] += 1
+
+            # Analyze by agent contributions (for combination nodes)
+            if hasattr(node, 'agent_contributions') and node.agent_contributions:
+                for agent_name in node.agent_contributions.keys():
+                    if agent_name not in agent_analysis:
+                        agent_analysis[agent_name] = {"rewards": [], "nodes": 0}
+                    agent_analysis[agent_name]["rewards"].append(reward)
+                    agent_analysis[agent_name]["nodes"] += 1
+
+        # Compute statistics
+        for depth, data in depth_analysis.items():
+            if data["rewards"]:
+                data["mean_reward"] = sum(data["rewards"]) / len(data["rewards"])
+                data["max_reward"] = max(data["rewards"])
+                data["success_rate"] = sum(1 for r in data["rewards"] if r > 0) / len(data["rewards"])
+
+        for agent_name, data in agent_analysis.items():
+            if data["rewards"]:
+                data["mean_reward"] = sum(data["rewards"]) / len(data["rewards"])
+                data["max_reward"] = max(data["rewards"])
+                data["success_rate"] = sum(1 for r in data["rewards"] if r > 0) / len(data["rewards"])
+
+        return {
+            "by_depth": depth_analysis,
+            "by_agent": agent_analysis
+        }
 
 
 logger.info("Smolagents tree orchestrator module loaded successfully")
