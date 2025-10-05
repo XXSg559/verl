@@ -32,7 +32,7 @@ from .async_batch_vllm_model import AsyncBatchVLLMModel
 from .step_batch_coordinator import StepBatchCoordinator, BatchCoordinationConfig, CoordinationStrategy
 from .async_agent import AsyncCodeAgent, AsyncAgentPool, StepExecutionResult, ExecutionMode
 from .step_sync_barrier import StepSyncBarrier, SyncBarrierConfig, SyncBarrierManager
-from .tree_memory import TreeMemory
+from ..tree_memory import TreeMemory
 
 logger = logging.getLogger(__name__)
 

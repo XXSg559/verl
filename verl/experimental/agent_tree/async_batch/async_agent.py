@@ -137,36 +137,55 @@ class AsyncCodeAgent(AsyncAgentInterface):
 
     def __init__(
         self,
-        base_agent: Optional[CodeAgent] = None,
-        model: Optional[AsyncBatchVLLMModel] = None,
+        # === CodeAgent 的原生参数，完全一致 ===
+        tools: list,
+        model,
+        prompt_templates: Optional[Any] = None,
+        additional_authorized_imports: Optional[list] = None,
+        planning_interval: Optional[int] = None,
+        executor_type: str = "local",
+        executor_kwargs: Optional[dict] = None,
+        max_print_outputs_length: Optional[int] = None,
+        stream_outputs: bool = False,
+        use_structured_outputs_internally: bool = False,
+        code_block_tags: Optional[Union[str, tuple]] = None,
+
+        # === 异步新增参数 ===
         agent_id: Optional[str] = None,
-        config: Optional[AsyncExecutionConfig] = None,
-        **agent_kwargs
+        async_config: Optional[AsyncExecutionConfig] = None,
+        **kwargs
     ):
         if not SMOLAGENTS_AVAILABLE:
             raise ImportError("smolagents is required for AsyncCodeAgent")
 
         self.agent_id = agent_id or str(uuid.uuid4())[:8]
-        self.config = config or AsyncExecutionConfig()
+        self.async_config = async_config or AsyncExecutionConfig()
 
-        # Initialize base agent
-        if base_agent:
-            self.base_agent = base_agent
-            self.model = model  # Use provided async model if available
+        # Handle async model - extract base model for CodeAgent compatibility
+        if hasattr(model, 'base_model'):
+            # This is an AsyncBatchVLLMModel, use its sync interface
+            code_agent_model = model.base_model
+            self.async_model = model
         else:
-            # Create new agent with async model
-            if not model:
-                raise ValueError("Either base_agent or model must be provided")
+            # This is a regular Model, use directly
+            code_agent_model = model
+            self.async_model = None
 
-            # Create CodeAgent with sync interface (will use async model internally)
-            # Ensure tools parameter is provided
-            agent_kwargs.setdefault('tools', [])
-
-            self.base_agent = CodeAgent(
-                model=model.base_model,  # Use sync interface for CodeAgent compatibility
-                **agent_kwargs
-            )
-            self.model = model
+        # Create CodeAgent with all parameters transparently passed
+        self.base_agent = CodeAgent(
+            tools=tools,
+            model=code_agent_model,
+            prompt_templates=prompt_templates,
+            additional_authorized_imports=additional_authorized_imports,
+            planning_interval=planning_interval,
+            executor_type=executor_type,
+            executor_kwargs=executor_kwargs,
+            max_print_outputs_length=max_print_outputs_length,
+            stream_outputs=stream_outputs,
+            use_structured_outputs_internally=use_structured_outputs_internally,
+            code_block_tags=code_block_tags,
+            **kwargs
+        )
 
         # Execution tracking
         self.execution_history: List[StepExecutionResult] = []
@@ -211,13 +230,13 @@ class AsyncCodeAgent(AsyncAgentInterface):
                 memory_state = self.get_current_memory_state()
 
                 # Step-level synchronization
-                if sync_barrier and self.config.enable_step_sync:
+                if sync_barrier and self.async_config.enable_step_sync:
                     sync_result = await sync_barrier.wait_for_step_sync(
                         agent_id=self.agent_id,
                         step_number=step_number,
                         agent_prompt=step_messages,
                         memory_state=memory_state,
-                        timeout=self.config.step_sync_timeout
+                        timeout=self.async_config.step_sync_timeout
                     )
 
                     # Execute as part of batch if sync succeeded
@@ -267,7 +286,7 @@ class AsyncCodeAgent(AsyncAgentInterface):
                 logger.error(f"Agent {self.agent_id} step {step_number} failed: {e}")
 
                 # Retry if configured
-                if self.config.retry_failed_steps and kwargs.get('retry_count', 0) < self.config.max_step_retries:
+                if self.async_config.retry_failed_steps and kwargs.get('retry_count', 0) < self.async_config.max_step_retries:
                     logger.info(f"Retrying step {step_number} for agent {self.agent_id}")
                     await asyncio.sleep(1.0)  # Brief delay before retry
                     kwargs['retry_count'] = kwargs.get('retry_count', 0) + 1
@@ -283,9 +302,13 @@ class AsyncCodeAgent(AsyncAgentInterface):
 
         logger.debug(f"Agent {self.agent_id} executing in batch {batch_info.get('batch_id')} with {len(batch_prompts)} agents")
 
-        if self.model and hasattr(self.model, 'generate_batch_async'):
+        if self.async_model and hasattr(self.async_model, 'generate_batch_async'):
             # Use async batch generation
-            batch_responses = await self.model.generate_batch_async(batch_prompts)
+            if self.async_model:
+                batch_responses = await self.async_model.generate_batch_async(batch_prompts)
+            else:
+                # Fall back to individual generation
+                return await self._execute_individual_step(step_messages)
 
             # Find this agent's response in the batch
             agent_index = None
@@ -305,9 +328,18 @@ class AsyncCodeAgent(AsyncAgentInterface):
 
     async def _execute_individual_step(self, step_messages: List[Any]) -> Any:
         """Execute step individually (non-batched)."""
-        if self.model and hasattr(self.model, 'generate_async'):
+        if self.async_model and hasattr(self.async_model, 'generate_async'):
             # Use async model
-            return await self.model.generate_async(step_messages)
+            if self.async_model:
+                return await self.async_model.generate_async(step_messages)
+            else:
+                # Fall back to sync generation
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(
+                    None,
+                    self.base_agent.model.generate,
+                    step_messages
+                )
         else:
             # Use sync model in executor
             loop = asyncio.get_event_loop()

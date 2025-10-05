@@ -151,10 +151,31 @@ class StepBatchCoordinator:
             # Remove agent_id from config to avoid duplication
             filtered_config = {k: v for k, v in agent_config.items() if k != 'agent_id'}
 
-            # Create async agent
+            # Ensure tools parameter is provided (required by CodeAgent)
+            filtered_config.setdefault('tools', [])
+
+            # Create async agent with new interface
             async_agent = AsyncCodeAgent(
+                # Required CodeAgent parameters
+                tools=filtered_config.pop('tools', []),
                 model=self.async_model,
+
+                # Other CodeAgent parameters (optional)
+                prompt_templates=filtered_config.pop('prompt_templates', None),
+                additional_authorized_imports=filtered_config.pop('additional_authorized_imports', None),
+                planning_interval=filtered_config.pop('planning_interval', None),
+                executor_type=filtered_config.pop('executor_type', 'local'),
+                executor_kwargs=filtered_config.pop('executor_kwargs', None),
+                max_print_outputs_length=filtered_config.pop('max_print_outputs_length', None),
+                stream_outputs=filtered_config.pop('stream_outputs', False),
+                use_structured_outputs_internally=filtered_config.pop('use_structured_outputs_internally', False),
+                code_block_tags=filtered_config.pop('code_block_tags', None),
+
+                # Async-specific parameters
                 agent_id=agent_id,
+                async_config=filtered_config.pop('async_config', None),
+
+                # Any remaining parameters
                 **filtered_config
             )
 

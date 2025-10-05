@@ -25,7 +25,7 @@ import time
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 
-from .batch_vllm_model import BatchVLLMModel
+from ..batch_vllm_model import BatchVLLMModel
 
 logger = logging.getLogger(__name__)
 
